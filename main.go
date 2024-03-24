@@ -9,6 +9,8 @@ import (
 	"bufio"
 	"log"
 	"regexp"
+	"crypto/md5"
+    "encoding/hex"
 )
 
 /*
@@ -96,6 +98,11 @@ func parse_log(parser_directive ParserDirective, index_name *string, log_path *s
 			matches := re.FindStringSubmatch(line)
 			
 			if len(matches) == regx.CaptureGroups+1 {
+				hasher := md5.New()
+				hasher.Write([]byte(line))
+				fmt.Println(hex.EncodeToString(hasher.Sum(nil)))
+
+
 				fmt.Printf("%d => %d => %s\n", line_counter, len(matches), matches[re.SubexpIndex("url")])
 				entries_indexed += 1
 				break;
