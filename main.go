@@ -14,19 +14,24 @@ import (
 /*
  * Directive section
  */
+type RegexField struct {
+	XMLName 		xml.Name		`xml:"regex"`
+	Expression 		string			`xml:",chardata"`
+	CaptureGroups	int				`xml:"capturegroups,attr"`
+}
 
 type Logfield struct {
-	XMLName		xml.Name	`xml:"logfield"`
-	Name		string		`xml:"name,attr"`
-	Datatype	string		`xml:"datatype,attr"`
+	XMLName			xml.Name		`xml:"logfield"`
+	Name			string			`xml:"name,attr"`
+	Datatype		string			`xml:"datatype,attr"`
 }
 
 type ParserDirective struct {
-	XMLName		xml.Name	`xml:"parserdirective"`
-	Name		string		`xml:"name"`
-	Description	string		`xml:"description"`
-	Regex		string		`xml:"regex"`
-	Logfields	[]Logfield	`xml:"logfields>logfield"`
+	XMLName			xml.Name		`xml:"parserdirective"`
+	Name			string			`xml:"name"`
+	Description		string			`xml:"description"`
+	Regexes			[]RegexField	`xml:"regexes>regex"`
+	Logfields		[]Logfield		`xml:"logfields>logfield"`
 }
 
 func load_parser_directive(xml_path string) ParserDirective {
@@ -68,12 +73,6 @@ func parse_log(parser_directive ParserDirective, index_name *string, log_path *s
 
 	scanner := bufio.NewScanner(file)
 
-	line_counter := 0
-
-	// Tracking errors
-	errors := 0
-	entries_indexed := 0
-
 	// Write lines with error to file for follow up
 	error_file, err := os.OpenFile("error.data", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
@@ -83,23 +82,32 @@ func parse_log(parser_directive ParserDirective, index_name *string, log_path *s
 	
 	defer error_file.Close()
 
+	// Tracking errors
+	errors := 0
+	entries_indexed := 0
+	line_counter := 0
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		line_counter += 1
 
-		re := regexp.MustCompile(parser_directive.Regex)
-		matches := re.FindStringSubmatch(line)
-
-		if len(matches) >= 8 {
-			fmt.Printf("%d - %d - %s => %s\n", line_counter, len(matches), matches[re.SubexpIndex("http_method")], matches[re.SubexpIndex("url")])
-			entries_indexed += 1
-		} else {
-			errors += 1
+		for index, regx := range parser_directive.Regexes {
+			re := regexp.MustCompile(regx.Expression)
+			matches := re.FindStringSubmatch(line)
 			
-			if _, err := error_file.WriteString(fmt.Sprintf("%s\n", line)); err != nil {
-				log.Println(err)
+			if len(matches) == regx.CaptureGroups+1 {
+				fmt.Printf("%d => %d => %s\n", line_counter, len(matches), matches[re.SubexpIndex("url")])
+				entries_indexed += 1
+				break;
 			}
-		
+
+			if len(parser_directive.Regexes) == index+1 {
+				errors += 1
+
+				if _, err := error_file.WriteString(fmt.Sprintf("%s\n", line)); err != nil {
+					log.Println(err)
+				}
+			}
 		}
 	}
 
