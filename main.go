@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -16,7 +15,7 @@ import (
 
 	"github.com/akamensky/argparse"
 	"github.com/elastic/go-elasticsearch/v8"
-	toml "github.com/pelletier/go-toml/v2"
+	"github.com/rjohnsen/lapio/kernel"
 )
 
 /*
@@ -78,26 +77,11 @@ func load_parser_directive(xml_path string) ParserDirective {
 
 func parse_log(parser_directive ParserDirective, index_name *string, log_path *string) {
 	// Get Elastic credentials
-	elastic_file, err := os.Open("elastic.toml")
+	elastic_credentials, err := kernel.LoadSettings("elastic.tomll")
 
 	if err != nil {
-		panic(err)
-	}
-
-	defer elastic_file.Close()
-
-	var elastic_credentials ElasticConfig
-
-	b, err := io.ReadAll(elastic_file)
-
-	if err != nil {
-		panic(err)
-	}
-
-	err = toml.Unmarshal(b, &elastic_credentials)
-
-	if err != nil {
-		panic(err)
+		fmt.Println(fmt.Errorf("[ ERR ] %s", err))
+		os.Exit(1)
 	}
 
 	fmt.Printf("Index: %s\n", *index_name)

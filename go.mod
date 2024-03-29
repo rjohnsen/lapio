@@ -1,4 +1,4 @@
-module lapio
+module github.com/rjohnsen/lapio
 
 go 1.22.1
 
