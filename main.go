@@ -6,9 +6,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"regexp"
@@ -19,65 +17,12 @@ import (
 )
 
 /*
- * Elastic configuration
- */
-
-type ElasticConfig struct {
-	Host     string
-	Username string
-	Password string
-}
-
-/*
- * Directive section
- */
-type RegexField struct {
-	XMLName       xml.Name `xml:"regex"`
-	Expression    string   `xml:",chardata"`
-	CaptureGroups int      `xml:"capturegroups,attr"`
-}
-
-type Logfield struct {
-	XMLName  xml.Name `xml:"logfield"`
-	Name     string   `xml:"name,attr"`
-	Datatype string   `xml:"datatype,attr"`
-}
-
-type ParserDirective struct {
-	XMLName     xml.Name     `xml:"parserdirective"`
-	Name        string       `xml:"name"`
-	Description string       `xml:"description"`
-	Regexes     []RegexField `xml:"regexes>regex"`
-	Logfields   []Logfield   `xml:"logfields>logfield"`
-}
-
-func load_parser_directive(xml_path string) ParserDirective {
-	xmlFile, err := os.Open(xml_path)
-
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	defer xmlFile.Close()
-
-	byteValue, _ := ioutil.ReadAll(xmlFile)
-
-	var parser_directive ParserDirective
-
-	if err := xml.Unmarshal(byteValue, &parser_directive); err != nil {
-		panic(err)
-	}
-
-	return parser_directive
-}
-
-/*
  * Parse log
  */
 
-func parse_log(parser_directive ParserDirective, index_name *string, log_path *string) {
+func parse_log(parser_directive kernel.ParserDirective, index_name *string, log_path *string) {
 	// Get Elastic credentials
-	elastic_credentials, err := kernel.LoadSettings("elastic.tomll")
+	elastic_credentials, err := kernel.LoadSettings("elastic.toml")
 
 	if err != nil {
 		fmt.Println(fmt.Errorf("[ ERR ] %s", err))
@@ -193,7 +138,7 @@ func parse_log(parser_directive ParserDirective, index_name *string, log_path *s
 
 func main() {
 	parser := argparse.NewParser("lapio", "Lapio - Log Shovel. Shovel logs into Elastic Search")
-	parser_directive_path := parser.String("d", "directive", &argparse.Options{
+	parserDirectivePath := parser.String("d", "directive", &argparse.Options{
 		Required: true,
 		Help:     "Path to parser directive",
 	})
@@ -213,9 +158,15 @@ func main() {
 	if err != nil {
 		fmt.Print(parser.Usage(err))
 	} else {
-		var parser_directive = load_parser_directive(*parser_directive_path)
+		var parserDirective, err = kernel.LoadParserDirective(*parserDirectivePath)
+
+		if err != nil {
+			fmt.Println(fmt.Errorf("[ ERR ] %s", err))
+			os.Exit(1)
+		}
+
 		parse_log(
-			parser_directive,
+			parserDirective,
 			index_name,
 			log_path,
 		)

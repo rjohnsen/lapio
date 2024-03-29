@@ -19,7 +19,7 @@ func LoadSettings(settingsPath string) (Settings, error) {
 	settingsFile, err := os.Open(settingsPath)
 
 	if err != nil {
-		return settings, errors.New("Unable to open settings file")
+		return settings, errors.New("unable to open settings file")
 	}
 
 	defer settingsFile.Close()
@@ -27,13 +27,13 @@ func LoadSettings(settingsPath string) (Settings, error) {
 	bytesContent, err := io.ReadAll(settingsFile)
 
 	if err != nil {
-		return settings, errors.New("Unable to read settings file")
+		return settings, errors.New("unable to read settings file")
 	}
 
 	err = toml.Unmarshal(bytesContent, &settings)
 
 	if err != nil {
-		return settings, errors.New("Unable to parase TOML settings file")
+		return settings, errors.New("unable to parse TOML settings file")
 	}
 
 	return settings, nil
