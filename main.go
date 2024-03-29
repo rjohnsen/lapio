@@ -1,39 +1,55 @@
 package main
 
 import (
-    "encoding/xml"
-    "fmt"
-    "io/ioutil"
-    "os"
-	"github.com/akamensky/argparse"
 	"bufio"
-	"log"
-	"regexp"
+	"bytes"
 	"crypto/md5"
-    "encoding/hex"
+	"encoding/hex"
+	"encoding/json"
+	"encoding/xml"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"log"
+	"os"
+	"regexp"
+
+	"github.com/akamensky/argparse"
+	"github.com/elastic/go-elasticsearch/v8"
+	toml "github.com/pelletier/go-toml/v2"
 )
+
+/*
+ * Elastic configuration
+ */
+
+type ElasticConfig struct {
+	Host     string
+	Username string
+	Password string
+}
 
 /*
  * Directive section
  */
 type RegexField struct {
-	XMLName 		xml.Name		`xml:"regex"`
-	Expression 		string			`xml:",chardata"`
-	CaptureGroups	int				`xml:"capturegroups,attr"`
+	XMLName       xml.Name `xml:"regex"`
+	Expression    string   `xml:",chardata"`
+	CaptureGroups int      `xml:"capturegroups,attr"`
 }
 
 type Logfield struct {
-	XMLName			xml.Name		`xml:"logfield"`
-	Name			string			`xml:"name,attr"`
-	Datatype		string			`xml:"datatype,attr"`
+	XMLName  xml.Name `xml:"logfield"`
+	Name     string   `xml:"name,attr"`
+	Datatype string   `xml:"datatype,attr"`
 }
 
 type ParserDirective struct {
-	XMLName			xml.Name		`xml:"parserdirective"`
-	Name			string			`xml:"name"`
-	Description		string			`xml:"description"`
-	Regexes			[]RegexField	`xml:"regexes>regex"`
-	Logfields		[]Logfield		`xml:"logfields>logfield"`
+	XMLName     xml.Name     `xml:"parserdirective"`
+	Name        string       `xml:"name"`
+	Description string       `xml:"description"`
+	Regexes     []RegexField `xml:"regexes>regex"`
+	Logfields   []Logfield   `xml:"logfields>logfield"`
 }
 
 func load_parser_directive(xml_path string) ParserDirective {
@@ -49,9 +65,9 @@ func load_parser_directive(xml_path string) ParserDirective {
 
 	var parser_directive ParserDirective
 
-	if err :=xml.Unmarshal(byteValue, &parser_directive); err != nil {
-        panic(err)
-    }
+	if err := xml.Unmarshal(byteValue, &parser_directive); err != nil {
+		panic(err)
+	}
 
 	return parser_directive
 }
@@ -61,6 +77,29 @@ func load_parser_directive(xml_path string) ParserDirective {
  */
 
 func parse_log(parser_directive ParserDirective, index_name *string, log_path *string) {
+	// Get Elastic credentials
+	elastic_file, err := os.Open("elastic.toml")
+
+	if err != nil {
+		panic(err)
+	}
+
+	defer elastic_file.Close()
+
+	var elastic_credentials ElasticConfig
+
+	b, err := io.ReadAll(elastic_file)
+
+	if err != nil {
+		panic(err)
+	}
+
+	err = toml.Unmarshal(b, &elastic_credentials)
+
+	if err != nil {
+		panic(err)
+	}
+
 	fmt.Printf("Index: %s\n", *index_name)
 	fmt.Printf("Parser Directive: %s\n", parser_directive.Name)
 	fmt.Printf("Log file: %s\n", *log_path)
@@ -81,13 +120,25 @@ func parse_log(parser_directive ParserDirective, index_name *string, log_path *s
 	if err != nil {
 		log.Println(err)
 	}
-	
+
 	defer error_file.Close()
 
 	// Tracking errors
 	errors := 0
 	entries_indexed := 0
 	line_counter := 0
+
+	es, err := elasticsearch.NewClient(elasticsearch.Config{
+		Addresses: []string{
+			elastic_credentials.Host,
+		},
+		Username: elastic_credentials.Username,
+		Password: elastic_credentials.Password,
+	})
+
+	if err != nil {
+		fmt.Println("Error creating the client: %s", err)
+	}
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -96,16 +147,39 @@ func parse_log(parser_directive ParserDirective, index_name *string, log_path *s
 		for index, regx := range parser_directive.Regexes {
 			re := regexp.MustCompile(regx.Expression)
 			matches := re.FindStringSubmatch(line)
-			
+
 			if len(matches) == regx.CaptureGroups+1 {
 				hasher := md5.New()
 				hasher.Write([]byte(line))
-				fmt.Println(hex.EncodeToString(hasher.Sum(nil)))
+				doc_id := hex.EncodeToString(hasher.Sum(nil))
+				doc_id = doc_id
+				doc := map[string]interface{}{}
 
+				for index, name := range re.SubexpNames() {
+					if index == 0 {
+						doc["message"] = string(matches[0])
+						continue
+					}
 
-				fmt.Printf("%d => %d => %s\n", line_counter, len(matches), matches[re.SubexpIndex("url")])
+					doc[name] = string(matches[index])
+				}
+
+				document, err := json.Marshal(doc)
+
+				if err != nil {
+					log.Println(err)
+				}
+
+				res, err := es.Index(*index_name, bytes.NewReader(document))
+
+				if err != nil {
+					panic("Indexing failed")
+				} else {
+					fmt.Println(res)
+				}
+
 				entries_indexed += 1
-				break;
+				break
 			}
 
 			if len(parser_directive.Regexes) == index+1 {
@@ -136,18 +210,18 @@ func parse_log(parser_directive ParserDirective, index_name *string, log_path *s
 func main() {
 	parser := argparse.NewParser("lapio", "Lapio - Log Shovel. Shovel logs into Elastic Search")
 	parser_directive_path := parser.String("d", "directive", &argparse.Options{
-		Required: true, 
-		Help: "Path to parser directive",
+		Required: true,
+		Help:     "Path to parser directive",
 	})
 
 	log_path := parser.String("l", "logpath", &argparse.Options{
 		Required: true,
-		Help: "Path to log file",
+		Help:     "Path to log file",
 	})
 
 	index_name := parser.String("i", "index", &argparse.Options{
 		Required: true,
-		Help: "Name of index (where to store logs)",
+		Help:     "Name of index (where to store logs)",
 	})
 
 	err := parser.Parse(os.Args)
