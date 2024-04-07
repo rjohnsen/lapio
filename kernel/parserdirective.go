@@ -7,6 +7,12 @@ import (
 	"os"
 )
 
+type TimeMapping struct {
+	XMLName      xml.Name `xml:"timemapping"`
+	MappingField string   `xml:"field,attr"`
+	Layout       string   `xml:",chardata"`
+}
+
 type RegexField struct {
 	XMLName       xml.Name `xml:"regex"`
 	Expression    string   `xml:",chardata"`
@@ -24,7 +30,8 @@ type ParserDirective struct {
 	Name        string       `xml:"name"`
 	Description string       `xml:"description"`
 	Regexes     []RegexField `xml:"regexes>regex"`
-	Logfields   []Logfield   `xml:"logfields>logfield"`
+	Time        TimeMapping
+	Logfields   []Logfield `xml:"logfields>logfield"`
 }
 
 func LoadParserDirective(xml_path string) (ParserDirective, error) {

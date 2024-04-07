@@ -102,7 +102,21 @@ func ParseLog(parserDirective ParserDirective, settings Settings, indexName stri
 				for index, name := range re.SubexpNames() {
 					if index == 0 {
 						doc["message"] = string(matches[0])
+						doc["log_origin"] = logPath
 						continue
+					}
+
+					// Handling log time
+					if name == parserDirective.Time.MappingField {
+						timeStr := matches[index]
+						parsedTime, err := time.Parse(parserDirective.Time.Layout, timeStr)
+
+						if err != nil {
+							fmt.Println("Error parsing time:", err)
+						} else {
+							rfc3339Time := parsedTime.Format(time.RFC3339)
+							doc["@timestamp"] = rfc3339Time
+						}
 					}
 
 					doc[name] = string(matches[index])
