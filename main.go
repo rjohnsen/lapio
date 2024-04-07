@@ -42,7 +42,7 @@ func main() {
 		}
 
 		// Get Elastic credentials
-		elasticCredentials, err := kernel.LoadSettings("elastic.toml")
+		settings, err := kernel.LoadSettings("elastic.toml")
 
 		if err != nil {
 			fmt.Println(fmt.Errorf("[ ERR ] %s", err))
@@ -52,8 +52,10 @@ func main() {
 		fmt.Printf("Index: %s\n", *indexName)
 		fmt.Printf("Parser Directive: %s\n", parserDirective.Name)
 		fmt.Printf("Log file: %s\n", *logPath)
+		fmt.Printf("Elastic: %s\n", settings.Host)
+		fmt.Println("-------------------------------------------------------")
 
-		parserStatus, err := kernel.ParseLog(parserDirective, elasticCredentials, *indexName, *logPath)
+		parserStatus, err := kernel.ParseLog(parserDirective, settings, *indexName, *logPath)
 
 		if err != nil {
 			fmt.Println(fmt.Errorf("[ ERR ] %s", err))

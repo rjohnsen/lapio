@@ -3,6 +3,7 @@ package kernel
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
@@ -11,8 +12,11 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esutil"
 )
 
 type ParserStatus struct {
@@ -21,7 +25,7 @@ type ParserStatus struct {
 	RowCount       int
 }
 
-func ParseLog(parserDirective ParserDirective, elasticCredentials Settings, indexName string, logPath string) (ParserStatus, error) {
+func ParseLog(parserDirective ParserDirective, settings Settings, indexName string, logPath string) (ParserStatus, error) {
 	var parserStatus ParserStatus
 	logFile, err := os.Open(*&logPath)
 
@@ -41,31 +45,58 @@ func ParseLog(parserDirective ParserDirective, elasticCredentials Settings, inde
 
 	defer errorFile.Close()
 
+	retryBackoff := backoff.NewExponentialBackOff()
+
+	// Elastic client
 	es, err := elasticsearch.NewClient(elasticsearch.Config{
 		Addresses: []string{
-			elasticCredentials.Host,
+			settings.Host,
 		},
-		Username: elasticCredentials.Username,
-		Password: elasticCredentials.Password,
+		Username: settings.Username,
+		Password: settings.Password,
+
+		// Retry on these status codes
+		RetryOnStatus: []int{502, 503, 504, 429},
+
+		// Backoff function
+		RetryBackoff: func(i int) time.Duration {
+			if i == 1 {
+				retryBackoff.Reset()
+			}
+			return retryBackoff.NextBackOff()
+		},
+
+		// Maximum number of retries
+		MaxRetries: 5,
 	})
 
 	if err != nil {
 		return parserStatus, errors.New("unable to create elastic client")
 	}
 
+	// BulkIndexer
+	bi, err := esutil.NewBulkIndexer(esutil.BulkIndexerConfig{
+		Index:         indexName,
+		Client:        es,
+		NumWorkers:    settings.Workers,
+		FlushBytes:    int(settings.Flushbytes),
+		FlushInterval: time.Duration(settings.Flushinterval) * time.Second,
+	})
+
+	if err != nil {
+		return parserStatus, errors.New("Unable to create BulkIndexer")
+	}
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		parserStatus.RowCount += 1
+		regexMatched := false
 
-		for index, regx := range parserDirective.Regexes {
+		for _, regx := range parserDirective.Regexes {
 			re := regexp.MustCompile(regx.Expression)
 			matches := re.FindStringSubmatch(line)
 
 			if len(matches) == regx.CaptureGroups+1 {
-				hasher := md5.New()
-				hasher.Write([]byte(line))
-				doc_id := hex.EncodeToString(hasher.Sum(nil))
-				doc_id = doc_id
 				doc := map[string]interface{}{}
 
 				for index, name := range re.SubexpNames() {
@@ -83,24 +114,45 @@ func ParseLog(parserDirective ParserDirective, elasticCredentials Settings, inde
 					log.Println(err)
 				}
 
-				res, err := es.Index(*&indexName, bytes.NewReader(document))
+				// Calulate document ID
+				hasher := md5.New()
+				hasher.Write([]byte(line))
+				docId := hex.EncodeToString(hasher.Sum(nil))
+
+				err = bi.Add(
+					context.Background(),
+					esutil.BulkIndexerItem{
+						Action:     "index",
+						DocumentID: docId,
+						Body:       bytes.NewReader(document),
+						OnSuccess: func(ctx context.Context, item esutil.BulkIndexerItem, res esutil.BulkIndexerResponseItem) {
+							parserStatus.IndexedEntries += 1
+						},
+						OnFailure: func(ctx context.Context, item esutil.BulkIndexerItem, res esutil.BulkIndexerResponseItem, err error) {
+							if err != nil {
+								log.Printf("ERROR: %s", err)
+								parserStatus.ErrorCount += 1
+							} else {
+								log.Printf("ERROR: %s: %s", res.Error.Type, res.Error.Reason)
+								parserStatus.ErrorCount += 1
+							}
+						},
+					},
+				)
 
 				if err != nil {
-					return parserStatus, errors.New("unable to index row. Please check if ElasticSearch is running and port 9200 is open.")
+					log.Fatalf("Unexpected error: %s", err)
 				} else {
-					fmt.Println(res)
+					fmt.Printf("[ _id: %s ] ItemNum: %d - Errors: %d\n", docId, parserStatus.IndexedEntries, parserStatus.ErrorCount)
+					regexMatched = true
+					break
 				}
-
-				parserStatus.IndexedEntries += 1
-				break
 			}
+		}
 
-			if len(parserDirective.Regexes) == index+1 {
-				parserStatus.ErrorCount += 1
-
-				if _, err := errorFile.WriteString(fmt.Sprintf("%s\n", line)); err != nil {
-					log.Println(err)
-				}
+		if !regexMatched {
+			if _, err := errorFile.WriteString(fmt.Sprintf("%s\n", line)); err != nil {
+				log.Println(err)
 			}
 		}
 	}

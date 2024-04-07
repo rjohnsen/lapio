@@ -9,9 +9,12 @@ import (
 )
 
 type Settings struct {
-	Host     string
-	Username string
-	Password string
+	Host          string
+	Username      string
+	Password      string
+	Workers       int
+	Flushbytes    float64
+	Flushinterval int
 }
 
 func LoadSettings(settingsPath string) (Settings, error) {
