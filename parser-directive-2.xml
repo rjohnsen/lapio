@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<parserdirective>
+    <name>NASA_access_log_Jul95</name>
+    <description>A directive for parsing Nginx Access Log from NASA_access_log_Jul95</description>
+    <regexes>
+        <regex capturegroups="7"><![CDATA[^(?P<url>.+)\s-\s-\s\[(?P<date>.+)\]\s\"(?P<http_method>[A-Za-z]+)\s(?P<path>.+)\s(?P<http_version>[A-Z]+\/.+)\"\s(?P<status_code>.+)\s(?P<data_size>.+)]]></regex>
+        <regex capturegroups="6"><![CDATA[^(?P<url>.+)\s-\s-\s\[(?P<date>.+)\]\s\"(?P<http_method>[A-Za-z]+)\s(?P<path>.+)\"\s(?P<status_code>\d+|\-)\s(?P<data_size>\d+|\-)]]></regex>
+        <regex capturegroups="5"><![CDATA[^(?P<url>.+)\s-\s-\s\[(?P<date>.+)\]\s\"(?P<path>.+)\"\s(?P<status_code>\d+|\-)\s(?P<data_size>\d+|\-)]]></regex>
+    </regexes>
+    <timemapping field="date"><![CDATA[02/Jan/2006:15:04:05 -0700]]></timemapping>
+    <logfields>
+        <logfield name="url" datatype="string" />
+        <logfield name="date" datatype="string" />
+        <logfield name="http_method" datatype="string" />
+        <logfield name="path" datatype="string" />
+        <logfield name="http_version" datatype="string" />
+        <logfield name="status_code" datatype="int" />
+        <logfield name="data_size" datatype="int" />
+    </logfields>
+</parserdirective>
