@@ -53,7 +53,7 @@ func main() {
 		fmt.Printf("Parser Directive: %s\n", parserDirective.Name)
 		fmt.Printf("Log file: %s\n", *logPath)
 		fmt.Printf("Elastic: %s\n", settings.Host)
-		fmt.Println("-------------------------------------------------------")
+		fmt.Println("-------------------------------------------------------\n")
 
 		parserStatus, err := kernel.ParseLog(parserDirective, settings, *indexName, *logPath)
 
@@ -66,5 +66,9 @@ func main() {
 		fmt.Printf("Entries total: %d\n", parserStatus.RowCount)
 		fmt.Printf("Entries indexed: %d\n", parserStatus.IndexedEntries)
 		fmt.Printf("Errors: %d\n", parserStatus.ErrorCount)
+
+		if parserStatus.ErrorCount > 0 {
+			fmt.Println("\nPlease see file 'error.data' in current directory for any unparsed log entries. Please adjust your regexes accordingly.")
+		}
 	}
 }
