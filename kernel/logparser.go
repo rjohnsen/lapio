@@ -165,6 +165,8 @@ func ParseLog(parserDirective ParserDirective, settings Settings, indexName stri
 		}
 
 		if !regexMatched {
+			parserStatus.ErrorCount += 1
+
 			if _, err := errorFile.WriteString(fmt.Sprintf("%s\n", line)); err != nil {
 				log.Println(err)
 			}
