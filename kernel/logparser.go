@@ -155,8 +155,7 @@ func ParseLog(parserDirective ParserDirective, settings Settings, indexName stri
 				)
 
 				if err == nil {
-					parserStatus.IndexedEntries += 1
-					fmt.Printf("[ _id: %s ]\n", docId)
+					fmt.Printf("[ %d ] DocID  %s\n", parserStatus.RowCount, docId)
 					regexMatched = true
 					break
 				} else {
